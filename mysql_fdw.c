@@ -86,6 +86,7 @@ typedef struct MySQLFdwExecutionState
 	MYSQL		*conn;
 	MYSQL_RES	*result;
 	char		*query;
+	unsigned int num_fields;
 } MySQLFdwExecutionState;
 
 /*
@@ -436,7 +437,21 @@ mysqlPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel)
 			));
 	}
 
+	/*
+	 * http://dev.mysql.com/doc/refman/5.0/en/null-mysql-store-result.html
+	 *
+	 * We assume we're given a query that does return data (SELECT).
+	 */
 	result = mysql_store_result(conn);
+
+	if (result == NULL)
+	{
+		char *err = pstrdup(mysql_error(conn));
+		mysql_close(conn);
+		ereport(ERROR,
+			(errcode(ERRCODE_FDW_UNABLE_TO_CREATE_EXECUTION),
+			errmsg("failed to execute the MySQL query: %s", err)));
+	}
 
 	while ((row = mysql_fetch_row(result)))
 		rows += atof(row[8]);
@@ -535,6 +550,7 @@ mysqlBeginForeignScan(ForeignScanState *node, int eflags)
 	festate->conn = conn;
 	festate->result = NULL;
 	festate->query = query;
+	festate->num_fields = 0;
 }
 
 /*
@@ -545,10 +561,8 @@ mysqlBeginForeignScan(ForeignScanState *node, int eflags)
 static TupleTableSlot *
 mysqlIterateForeignScan(ForeignScanState *node)
 {
-	char			**values;
 	HeapTuple		tuple;
 	MYSQL_ROW		row;
-	int			x;
 
 	MySQLFdwExecutionState *festate = (MySQLFdwExecutionState *) node->fdw_state;
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
@@ -562,12 +576,25 @@ mysqlIterateForeignScan(ForeignScanState *node)
 			mysql_close(festate->conn);
 			ereport(ERROR,
 				(errcode(ERRCODE_FDW_UNABLE_TO_CREATE_EXECUTION),
-				errmsg("failed to execute the MySQL query: %s", err)
-				));
+				errmsg("failed to execute the MySQL query: %s", err)));
 		}
 
-		/* Guess the query succeeded then */
+		/*
+		 * http://dev.mysql.com/doc/refman/5.0/en/null-mysql-store-result.html
+		 *
+		 * We assume we're given a query that does return data (SELECT).
+		 */
 		festate->result = mysql_store_result(festate->conn);
+
+		if (festate->result == NULL)
+		{
+			char *err = pstrdup(mysql_error(festate->conn));
+			mysql_close(festate->conn);
+			ereport(ERROR,
+					(errcode(ERRCODE_FDW_UNABLE_TO_CREATE_EXECUTION),
+					 errmsg("failed to execute the MySQL query: %s", err)));
+		}
+		festate->num_fields = mysql_num_fields(festate->result);
 	}
 
 	/* Cleanup */
@@ -577,15 +604,29 @@ mysqlIterateForeignScan(ForeignScanState *node)
 	if ((row = mysql_fetch_row(festate->result)))
 	{
 		/* Build the tuple */
-		values = (char **) palloc(sizeof(char *) * mysql_num_fields(festate->result));
+		unsigned long    *lengths;
+		char			**values;
+		int				  x;
 
-		for (x = 0; x < mysql_num_fields(festate->result); x++)
-			values[x] = row[x];
+		lengths = mysql_fetch_lengths(festate->result);
+		values = (char **) palloc(festate->num_fields * sizeof(char *));
 
-		tuple = BuildTupleFromCStrings(TupleDescGetAttInMetadata(node->ss.ss_currentRelation->rd_att), values);
+		for (x = 0; x < festate->num_fields; x++)
+		{
+			if (lengths[x] == 0 && row[x] != 0)
+				/* special case empty string */
+				values[x] = "";
+			else
+				values[x] = row[x];
+		}
+
+		tuple = BuildTupleFromCStrings(
+			TupleDescGetAttInMetadata(node->ss.ss_currentRelation->rd_att),
+			values);
 		ExecStoreTuple(tuple, slot, InvalidBuffer, false);
-	}
 
+		pfree(values);
+	}
 	return slot;
 }
 
