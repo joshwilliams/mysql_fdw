@@ -626,7 +626,7 @@ mysqlIterateForeignScan(ForeignScanState *node)
 
 		for (x = 0; x < festate->num_fields; x++)
 		{
-			if (lengths[x] == 0 && row[x] != 0)
+			if (lengths[x] == 0 && row[x] != NULL)
 				/* special case empty string */
 				values[x] = "";
 			else
