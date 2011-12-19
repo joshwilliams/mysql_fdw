@@ -375,7 +375,9 @@ mysqlPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel)
 	MYSQL_ROW	row;
 
 	/* Fetch options  */
-	mysqlGetOptions(foreigntableid, &svr_address, &svr_port, &svr_username, &svr_password, &svr_database, &svr_query, &svr_table);
+	mysqlGetOptions(foreigntableid, &svr_address, &svr_port,
+					&svr_username, &svr_password,
+					&svr_database, &svr_query, &svr_table);
 
 	/* Construct FdwPlan with cost estimates. */
 	fdwplan = makeNode(FdwPlan);
@@ -399,7 +401,11 @@ mysqlPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel)
 			errmsg("failed to initialise the MySQL connection object")
 			));
 
-	if (!mysql_real_connect(conn, svr_address, svr_username, svr_password, svr_database, svr_port, NULL, 0))
+	mysql_options(conn, MYSQL_SET_CHARSET_NAME, GetDatabaseEncodingName());
+
+	if (!mysql_real_connect(conn, svr_address, svr_username, svr_password,
+							svr_database, svr_port, NULL,
+							CLIENT_COMPRESS | CLIENT_REMEMBER_OPTIONS ))
 		ereport(ERROR,
 			(errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
 			errmsg("failed to connect to MySQL: %s", mysql_error(conn))
@@ -517,7 +523,10 @@ mysqlBeginForeignScan(ForeignScanState *node, int eflags)
 	char			*query;
 
 	/* Fetch options  */
-	mysqlGetOptions(RelationGetRelid(node->ss.ss_currentRelation), &svr_address, &svr_port, &svr_username, &svr_password, &svr_database, &svr_query, &svr_table);
+	mysqlGetOptions(RelationGetRelid(node->ss.ss_currentRelation),
+					&svr_address, &svr_port,
+					&svr_username, &svr_password,
+					&svr_database, &svr_query, &svr_table);
 
 	/* Connect to the server */
 	conn = mysql_init(NULL);
@@ -527,7 +536,11 @@ mysqlBeginForeignScan(ForeignScanState *node, int eflags)
 			errmsg("failed to initialise the MySQL connection object")
 			));
 
-	if (!mysql_real_connect(conn, svr_address, svr_username, svr_password, svr_database, svr_port, NULL, 0))
+	mysql_options(conn, MYSQL_SET_CHARSET_NAME, GetDatabaseEncodingName());
+
+	if (!mysql_real_connect(conn, svr_address, svr_username, svr_password,
+							svr_database, svr_port, NULL,
+							CLIENT_COMPRESS | CLIENT_REMEMBER_OPTIONS ))
 		ereport(ERROR,
 			(errcode(ERRCODE_FDW_UNABLE_TO_ESTABLISH_CONNECTION),
 			errmsg("failed to connect to MySQL: %s", mysql_error(conn))
