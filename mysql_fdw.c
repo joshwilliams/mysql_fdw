@@ -368,7 +368,7 @@ mysqlPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel)
 	char 		*svr_query = NULL;
 	char 		*svr_table = NULL;
 	char		*query;
-	double		rows;
+	double		rows = 0;
 	MYSQL	   *conn;
 	MYSQL_RES	*result;
 	MYSQL_ROW	row;
@@ -385,9 +385,9 @@ mysqlPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel)
 	else
 		fdwplan->startup_cost = 25;
 
-	/* 
+	/*
 	 * TODO: Find a way to stash this connection object away, so we don't have
-	 * to reconnect to MySQL aain later.
+	 * to reconnect to MySQL again later.
 	 */
 
 	/* Connect to the server */
@@ -420,7 +420,7 @@ mysqlPlanForeignScan(Oid foreigntableid, PlannerInfo *root, RelOptInfo *baserel)
 		snprintf(query, len, "EXPLAIN SELECT * FROM %s", svr_table);
 	}
 
-	/*A
+	/*
 	 * MySQL seems to have some pretty unhelpful EXPLAIN output, which only
 	 * gives a row estimate for each relation in the statement. We'll use the
 	 * sum of the rows as our cost estimate - it's not great (in fact, in some
