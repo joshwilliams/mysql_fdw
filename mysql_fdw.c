@@ -773,6 +773,9 @@ mysqlReScanForeignScan(ForeignScanState *node)
 {
 	MySQLFdwExecutionState *festate = (MySQLFdwExecutionState *) node->fdw_state;
 
-	mysql_data_seek(festate->result, 0);
+	if (festate->result)
+	{
+		mysql_data_seek(festate->result, 0);
+	}
 }
 
